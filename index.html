@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+        <link rel="stylesheet" href="styles.css">
+    </head>
+    <body>
+        <div id="map"></div>
+        <div id="chat-container">
+            <div id="headline">
+                <div id="Name">Hurricane</div>
+                <div id="Bot">Bot</div>
+            </div>
+            <div id="chat-messages"></div>
+            <div id="input-container">
+                <input type="text" id="user-input" placeholder="Ask about hurricanes...">
+                <button id="send-button">Send</button>
+            </div>
+        </div>
+
+        <script>
+            var map = L.map("map").setView([25, -70], 5);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19
+            }).addTo(map);
+
+            let hurricaneData = null;
+
+            // Fetch hurricane data when page loads
+            fetch('/Public/hurricanes2020.csv')
+                .then(response => response.text())
+                .then(data => {
+                    hurricaneData = data;
+                    console.log('Raw CSV data:', data);
+                    
+                    Papa.parse(data, {
+                        header: true,
+                        complete: function(results) {
+                            console.log('Parsed data:', results.data);
+                            
+                            var pathCoordinates = results.data
+                                .filter(item => {
+                                    console.log('Item:', item);
+                                    return item['Lat 1'] && item['long 1'];
+                                })
+                                .map(item => {
+                                    let lat = parseFloat(item['Lat 1']);
+                                    let long = parseFloat(item['long 1']);
+                                    console.log('Adding marker at:', lat, long);
+                                    
+                                    let marker = L.marker([lat, long]).addTo(map)
+                                        .bindPopup(item['Given Name'])
+                                        .bindTooltip(item['Category']);
+                                        
+                                    return [lat, long];
+                                });
+                            
+                            console.log('Path coordinates:', pathCoordinates);
+                            L.polyline(pathCoordinates, {color: 'red'}).addTo(map);
+                        },
+                        error: function(error) {
+                            console.error('Papa Parse error:', error);
+                        }
+                    });
+                })
+                .catch(error => console.error('Fetch error:', error));
+
+            
+            const chatMessages = document.getElementById('chat-messages');
+            const userInput = document.getElementById('user-input');
+            const sendButton = document.getElementById('send-button');
+
+            async function sendMessage() {
+                const message = userInput.value.trim();
+                if (!message) return;
+
+                // Add user message
+                addMessage(message, true);
+                userInput.value = '';
+
+                try {
+                    const response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message })
+                    });
+                    const data = await response.json();
+                    addMessage(data.response, false);
+                } catch (error) {
+                    addMessage('Sorry, there was an error processing your request.', false);
+                }
+            }
+
+            function addMessage(message, isUser) {
+                const div = document.createElement('div');
+                div.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+                div.textContent = message;
+                chatMessages.appendChild(div);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            sendButton.addEventListener('click', sendMessage);
+            userInput.addEventListener('keypress', e => {
+                if (e.key === 'Enter') sendMessage();
+            });
+        </script>
+    </body>
+</html>
